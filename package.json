@@ -1,0 +1,24 @@
+{
+  "name": "trace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "node --experimental-strip-types --watch src/server.ts",
+    "check": "tsc --noEmit",
+    "build": "tsc",
+    "start": "node dist/src/server.js",
+    "gateway": "node dist/src/gateway.js",
+    "check:isolation": "node dist/src/isolation-check.js",
+    "test": "npm run build && node --test dist/tests/*.test.js"
+  },
+  "dependencies": {
+    "ipaddr.js": "^2.2.0",
+    "playwright": "1.63.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5.9.3"
+  }
+}

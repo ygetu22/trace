@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Trace checks public website health, accessibility signals, metadata, performance, and selected interactions.">
+    <title>Trace — website checks</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="masthead"><a class="wordmark" href="/">Trace<span>.</span></a><span class="edition">Basic website checks</span></header>
+    <main>
+      <section class="introduction" aria-labelledby="page-title">
+        <p class="eyebrow">A closer look at your website</p>
+        <h1 id="page-title">One URL.<br>A clear <em>report.</em></h1>
+        <p class="lede">Trace tries a short visitor path and checks page health. See what worked, what needs review, and screenshots of failed or unverified steps.</p>
+      </section>
+      <section class="capture-panel" aria-labelledby="capture-title">
+        <div class="panel-heading"><h2 id="capture-title">Check a website</h2><span class="stamp">3 checks / 24 hours</span></div>
+        <form id="capture-form">
+          <label for="website-url">Public website URL</label>
+          <div class="input-row"><input id="website-url" name="url" type="url" placeholder="https://your-website.com" required maxlength="2048" autocomplete="url" aria-describedby="capture-help usage"><button id="capture-button" type="submit">Check website <span aria-hidden="true">↗</span></button></div>
+          <p id="capture-help" class="hint">Page health · Accessibility signals · Search metadata · Performance · Selected controls and links</p>
+          <details class="feature-check">
+            <summary>Check one specific feature (optional)</summary>
+            <p class="hint">Enter the exact accessible name of a button, tab, or link and the text that should appear after the click. Trace checks both desktop and mobile. Controls inside forms and potentially state-changing actions are skipped.</p>
+            <label for="feature-label">Control's accessible name</label>
+            <input id="feature-label" name="featureLabel" maxlength="200" placeholder="For example: Show hours">
+            <label for="expected-result">Text that should appear</label>
+            <input id="expected-result" name="expectedText" maxlength="500" placeholder="For example: Open today until 5 PM">
+          </details>
+          <p id="usage" class="hint" role="status">Loading your available checks…</p>
+        </form>
+        <p id="progress" class="progress" role="status" hidden></p>
+        <p id="error" class="error" role="alert" hidden></p>
+      </section>
+      <section id="result" class="evidence" aria-labelledby="report-title" hidden>
+        <div class="panel-heading"><h2 id="report-title" tabindex="-1">Your report</h2><a id="report-link" class="text-link" download="trace-report.txt">Save text report ↗</a></div>
+        <div id="report-overview"></div>
+        <pre id="report-text" class="text-report"></pre>
+        <section id="journey" hidden></section>
+        <div id="report-findings"></div>
+        <p id="screenshot-note" class="hint" hidden>Screenshots stay in this page until you leave or reload. Save them separately from the text report.</p>
+        <details class="feature-check" id="action-details" hidden><summary>All actions tried</summary><ol id="action-list"></ol></details>
+        <details class="feature-check" id="coverage-details" hidden><summary>Check details</summary><ul id="coverage-list"></ul></details>
+      </section>
+      <p class="scope-note">Trace tries buttons, form editing, and required-field validation on desktop and mobile, plus up to three same-site links when time allows. Identifiable GET searches use a sample query. Other form requests are blocked; successful submissions, sign-in, and payments remain unverified. The report lists the actions tried.</p>
+      <footer><span>Real observations. Clear limits.</span><span>Trace / Basics</span></footer>
+    </main>
+  </body>
+</html>

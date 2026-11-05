@@ -1,0 +1,29 @@
+services:
+  egress:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    image: trace-worker:local
+    container_name: trace-egress
+    command: ["node", "dist/src/proxy-service.js"]
+    user: pwuser
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    networks:
+      isolated:
+        ipv4_address: 172.30.0.2
+      internet: {}
+    # No published ports, secrets, host mounts, or Docker socket.
+networks:
+  isolated:
+    name: trace-isolated
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  internet: {}
