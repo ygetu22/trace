@@ -1,22 +1,39 @@
 # Trace
 
-Enter a public website URL and get a concise report based on a bounded browser review. Trace stays local; nothing is deployed.
+You paste in a URL and Trace opens the site in a real browser, clicks around a bit like a visitor would, and gives you back a short report on what worked and what didn't.
 
-## What this version checks
+I built it because most site checkers only load the homepage and score it. I wanted something that actually tries the menu, follows a couple of links, types into a form, and shows a screenshot when something doesn't behave.
 
-1. **Page health:** HTTP/HTTPS, certificate acceptance, resource and image errors, load-time JavaScript errors, mobile overflow, and selected security headers.
-2. **Accessibility signals:** missing form labels/image alt text/control names, missing document language, controls skipped by keyboard tab order, and contrast samples where colors are solid enough to estimate.
-3. **Search preview:** page title, description, viewport, H1, and noindex directives.
-4. **Performance:** single-visit LCP, layout shift, and long-task observations; these are not real-user Core Web Vitals.
-5. **Browser interactions:** up to four buttons and two forms per sampled page, an identifiable GET search, and three same-origin desktop links within the time budget. Linked pages also receive interaction checks when time remains. Form checks fill a sample field, change a dropdown, toggle a checkbox, and attempt required-field rejection while blocking network requests. Owners can provide one control and the text expected after clicking. Reports include an expandable action ledger.
+![Trace report for playwright.dev](docs/images/report.png)
 
-The report separates observed problems, observations to review, and recommendations. Missing headers do not establish exploitable vulnerabilities. Automated accessibility signals, single-visit performance, and metadata are limited indicators, not complete audits. Trace cannot infer intended business behavior or establish that a website is fully secure. An optional feature check lets an owner name one control and expected visible text; Trace tries that exact check on desktop and mobile.
+## What it checks
 
-Trace starts separate desktop and mobile browser sessions. Identifiable same-origin GET searches may submit the synthetic query `trace`; all other form checks block outgoing requests. Successful business submissions, sign-in, purchases, and application access controls remain unverified. It blocks non-read requests, WebSockets, popups, downloads, cross-origin exploration navigation, arbitrary query-string links, and candidates that look state-changing. Even GET requests can have side effects on some sites; run checks only on sites you are authorized to inspect.
+- **Page health:** status codes, HTTPS, broken images, JS errors on load, mobile overflow, and some security headers.
+- **Accessibility:** missing labels and alt text, unnamed buttons, tab order, and a sample of text contrast.
+- **Search preview:** title, description, H1, and noindex.
+- **Performance:** LCP, layout shift, and long tasks from one visit. This isn't real-user data.
+- **Visitor path:** it guesses what a visitor would want on the site and tries that. On a gym site that's locations, on a shop it's products. On each page it presses up to four buttons, edits up to two forms, and follows up to three links. Anything that fails or can't be confirmed gets a screenshot with the element marked in red.
 
-## Run locally
+You can also give it one thing to check yourself, like "click *Show hours* and expect to see *Open until 5 PM*".
 
-Requires Node.js 22+ and Playwright Chromium or installed Chrome.
+The report splits findings into real problems, things to review, and recommendations. It won't call something broken unless it actually saw it break.
+
+## Staying safe on other people's sites
+
+Trace visits sites it doesn't control, so I locked down what it's allowed to do:
+
+- **Forms never submit.** It types into fields and checks the validation, but every outgoing request is blocked while it does. Password, card, and file fields are skipped.
+- **Searches are limited.** A search box can only send the word `trace`, and only to its own site.
+- **Only reads go out.** POST/PUT requests, WebSockets, downloads, and popups are blocked.
+- **No private addresses.** Every request goes through a small proxy (`src/outbound-proxy.ts`) that rejects private, loopback, and cloud metadata addresses. It also pins the IP it checked, so DNS rebinding can't sneak past.
+- **Each check is short-lived.** It gets a fresh browser and a 90 second deadline, and only one runs at a time.
+- **Usage is capped.** Each IP gets 3 checks a day. IPs are stored as salted hashes, never raw.
+
+Still, only run it on sites you're allowed to test.
+
+## Running it
+
+You need Node 22+.
 
 ```sh
 npm install
@@ -24,40 +41,30 @@ npx playwright install chromium
 npm run dev
 ```
 
-Open http://127.0.0.1:3120. With installed Chrome, use `TRACE_BROWSER_CHANNEL=chrome npm run dev`. Run commands from this directory. The server stays bound to loopback; do not expose it publicly.
+Then open http://127.0.0.1:3120. If you'd rather use your installed Chrome, run `TRACE_BROWSER_CHANNEL=chrome npm run dev`.
+
+The server only listens on localhost.
 
 ```sh
-npm run check
-npm test
-TRACE_BROWSER_CHANNEL=chrome TRACE_LIVE_TESTS=1 npm test
-npm run build
-npm start
+npm run check   # type check
+npm test        # unit + browser tests
+TRACE_BROWSER_CHANNEL=chrome TRACE_LIVE_TESTS=1 npm test   # also hits example.com and playwright.dev
 ```
 
-Tests use temporary quota data, not the user's live allowance. Live tests additionally visit example.com and playwright.dev.
+## Code layout
 
-## Three checks per IP in 24 hours
+- `src/basic-check.ts` runs a check from start to finish.
+- `src/explore.ts` and `src/journey.ts` pick the visitor path and try the buttons and links.
+- `src/form-interactions.ts` and `src/search-interactions.ts` handle the form and search tests.
+- `src/checks.ts` holds the page health, accessibility, metadata, and performance checks.
+- `src/report.ts` turns the results into the report.
+- `src/screenshot-evidence.ts` takes the marked-up screenshots.
+- `src/network-policy.ts` and `src/outbound-proxy.ts` decide what the browser is allowed to reach.
+- `src/daily-quota.ts` is the 3-per-day limit.
+- `web/` is the plain HTML/JS frontend, and `tests/` has the tests.
 
-Each started check uses one of three slots in a rolling 24-hour window, even if the website cannot be reached. Invalid/private URLs and requests rejected before admission do not use a slot. Refreshing, clearing cookies, and restarting the server do not reset usage. The UI shows remaining checks and the next available time; the API rejects a fourth check with HTTP 429 and Retry-After.
+There's more detail in [docs/how-it-works.md](docs/how-it-works.md).
 
-The single local server stores a salted HMAC of the socket IP and timestamps under ignored `data/usage`, using private file permissions and atomic replacement. Raw IPs are not stored. IPv4-mapped addresses normalize to the same identity. Client-provided forwarding headers are ignored. Missing/corrupt quota data or storage failures do not silently grant checks. Preserve the quota directory across server restarts. Do not run multiple server processes against it: this implementation serializes reservations within one process, not across replicas.
+## Not live yet
 
-Every browser on this computer shares its loopback IP allowance. On a public site, a trusted edge must supply the verified client identity to a persistent, shared quota service; do not simply trust X-Forwarded-For or CF-Connecting-IP from arbitrary requests. Shared networks share an IP quota; VPNs and rotating IPs can change identity. IP limits are not complete bot protection.
-
-## API and safety boundaries
-
-`POST /api/captures` accepts `{ "url": "https://example.com", "featureCheck": { "label": "Show hours", "expectedText": "Open until 5 PM" } }`; the optional `featureCheck` must include both strings. The response includes the text report and usage. `GET /api/usage` returns remaining allowance without consuming it. Reports are downloadable as `.txt` and are not stored in a public run archive. The basic server does not serve old screenshots or trace artifacts.
-
-A fresh browser visits the page through the validating outbound proxy. Private/loopback/metadata destinations and nonstandard ports are rejected; vetted public addresses are pinned for connections. Service workers, non-read requests, WebSockets, downloads, and popups are blocked. One check runs at a time with a 90-second deadline and cleanup. Browser restrictions can affect rendering, and GETs cannot guarantee a website has no side effects.
-
-## Ownership and paused work
-
-- `src/basic-check.ts`: bounded site review orchestration and plain-text report.
-- `src/local-server.ts` and `src/server.ts`: local API, validation, admission, deadlines, and startup.
-- `src/daily-quota.ts`: persistent three-check limit.
-- `src/form-interactions.ts` and `src/search-interactions.ts`: bounded real browser form editing/validation and GET search actions.
-- `src/checks.ts`: browser observations, page/header, accessibility, metadata, and performance checks.
-- `src/network-policy.ts` and `src/outbound-proxy.ts`: public destination validation and pinned network access.
-- `web`: the single-input, text-report client; `tests`: meaningful regressions.
-
-`explore.ts` provides bounded same-site link and button, search, and form sampling without saving screenshots in the current report. Hosting and the old artifact gateway remain inactive. The portfolio uses this checker through its local-only integration. More detail is in [how it works](docs/how-it-works.md).
+Right now it only runs locally. My portfolio's Trace page talks to it on localhost too, so it won't run checks on the live site until this is hosted. To host it for real, I'll run each check in its own locked-down container on a separate server. That plan is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), along with the `deployment/` and `src/gateway*` files. None of it is running yet.
