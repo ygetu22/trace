@@ -60,4 +60,4 @@ A fresh browser visits the page through the validating outbound proxy. Private/l
 - `src/network-policy.ts` and `src/outbound-proxy.ts`: public destination validation and pinned network access.
 - `web`: the single-input, text-report client; `tests`: meaningful regressions.
 
-`explore.ts` provides bounded same-site link and button, search, and form sampling without saving screenshots in the current report. Hosting and the old artifact gateway remain inactive. The portfolio uses this checker through its local-only integration. See [the current scope](docs/BASIC_SCOPE.md) and [roadmap](docs/ROADMAP.md). Nothing may be deployed until Yakob explicitly says so.
+`explore.ts` provides bounded same-site link and button, search, and form sampling without saving screenshots in the current report. Hosting and the old artifact gateway remain inactive. The portfolio uses this checker through its local-only integration. More detail is in [how it works](docs/how-it-works.md).
