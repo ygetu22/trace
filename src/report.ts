@@ -7,6 +7,11 @@ interface ReportFindingGroup {
   related: Finding[];
 }
 
+// "1 distinct resource" / "3 distinct resources"
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 function isBackgroundNoise(finding: Finding): boolean {
   if (finding.kind !== "failed-resource") return false;
   return (
@@ -21,10 +26,17 @@ function groupReportFindings(findings: Finding[]): ReportFindingGroup[] {
   for (const finding of findings) {
     if (isBackgroundNoise(finding)) continue;
     const classification = finding.classification ?? "review";
+    // Interaction and link findings are about one specific control, so two
+    // different buttons with the same summary must stay separate in the report.
+    const isPerControl =
+      finding.kind === "interaction" || finding.kind === "broken-link";
+    const controlKey = isPerControl
+      ? `${finding.pageUrl}:${finding.evidence.controlLabel}`
+      : "";
     const key =
       classification === "recommendation" && finding.kind === "security"
         ? `${classification}:security-headers`
-        : `${classification}:${finding.kind}:${finding.summary}:${finding.kind === "interaction" || finding.kind === "broken-link" ? `${finding.pageUrl}:${finding.evidence.controlLabel}` : ""}`;
+        : `${classification}:${finding.kind}:${finding.summary}:${controlKey}`;
     const group = groups.get(key);
     if (group) {
       group.count++;
@@ -187,10 +199,17 @@ function reportLine(group: ReportFindingGroup): string {
         ? (item.evidence.fields as Record<string, unknown>[])
         : [],
     )[0];
-    const selector = field
-      ? `${String(field.tag ?? "field")}${field.id ? `#${String(field.id).slice(0, 40)}` : field.name ? `[name=${String(field.name).slice(0, 40)}]` : ""}`
-      : "";
-    return `• ${finding.summary}${selector ? ` (e.g. ${selector})` : ""}${countNote}. Add a visible label or programmatic name; a placeholder alone is not a label.`;
+    let selectorNote = "";
+    if (field) {
+      let fieldName = "";
+      if (field.id) fieldName = `#${String(field.id).slice(0, 40)}`;
+      else if (field.name) fieldName = `[name=${String(field.name).slice(0, 40)}]`;
+      selectorNote = ` (e.g. ${String(field.tag ?? "field")}${fieldName})`;
+    }
+    return (
+      `• ${finding.summary}${selectorNote}${countNote}. ` +
+      "Add a visible label or programmatic name; a placeholder alone is not a label."
+    );
   }
   if (finding.kind === "performance") {
     const metrics = finding.evidence;
@@ -215,7 +234,8 @@ function reportLine(group: ReportFindingGroup): string {
     );
     const resourceCount = urls.size || 1;
     const host = conciseHost(finding.evidence.url);
-    return `• Security policy blocked ${resourceCount} distinct resource${resourceCount === 1 ? "" : "s"}${host ? ` (${host})` : ""}. Visible impact is unverified.`;
+    const hostNote = host ? ` (${host})` : "";
+    return `• Security policy blocked ${plural(resourceCount, "distinct resource")}${hostNote}. Visible impact is unverified.`;
   }
   if (finding.kind === "broken-link") {
     if (finding.evidence.policyBlocked)
@@ -324,7 +344,7 @@ export function summarizeLimits(limits: string[]): string[] {
     const [kind, reason] = key.split(":");
     const examples = [...labels].slice(0, 3).join(", ");
     unique.add(
-      `${labels.size} distinct ${kind}${labels.size === 1 ? "" : "s"} skipped: ${reason} (e.g. ${examples}).`,
+      `${plural(labels.size, `distinct ${kind}`)} skipped: ${reason} (e.g. ${examples}).`,
     );
   }
   return [...unique];
@@ -444,18 +464,26 @@ export function formatReportDownload(
         /https?:\/\/[^\s]+/g,
         (url) => conciseLocation(url) ?? "[page]",
       );
+      const label = action.label || "Unnamed action";
+      const location = conciseLocation(action.beforeUrl);
+      let evidenceNote = "";
+      if (action.evidenceId)
+        evidenceNote = ` [Screenshot ${action.evidenceId}; save separately.]`;
+      else if (action.evidenceNote) evidenceNote = ` [${action.evidenceNote}]`;
       lines.push(
-        `• ${outcome} · ${action.viewport} · ${action.label || "Unnamed action"} (${conciseLocation(action.beforeUrl)}) — ${detail}${action.evidenceId ? ` [Screenshot ${action.evidenceId}; save separately.]` : action.evidenceNote ? ` [${action.evidenceNote}]` : ""}`,
+        `• ${outcome} · ${action.viewport} · ${label} (${location}) — ${detail}${evidenceNote}`,
       );
     }
   }
   const findingEvidence = buildReportPresentation(report).sections.flatMap(
     (section) =>
       section.items.flatMap((item) =>
-        (item.examples ?? []).map(
-          (example) =>
-            `• ${item.title} — ${example.label}: ${example.evidenceId ? `Screenshot ${example.evidenceId} (save separately).` : (example.evidenceNote ?? "No screenshot available.")}`,
-        ),
+        (item.examples ?? []).map((example) => {
+          const evidence = example.evidenceId
+            ? `Screenshot ${example.evidenceId} (save separately).`
+            : (example.evidenceNote ?? "No screenshot available.");
+          return `• ${item.title} — ${example.label}: ${evidence}`;
+        }),
       ),
   );
   if (findingEvidence.length)
@@ -576,10 +604,13 @@ export function buildReportPresentation(
         ];
         if (!values.length) continue;
         const example = values[0]!;
+        const exampleNote = example.id
+          ? ` Example: ${String(example.tag ?? "element")}#${String(example.id).slice(0, 60)}.`
+          : "";
         const detail =
           key === "lowContrast"
             ? `“${String(example.text ?? "").slice(0, 80)}” · ${example.ratio}:1 (sampled).`
-            : `${values.length} distinct sample${values.length === 1 ? "" : "s"} found.${example.id ? ` Example: ${String(example.tag ?? "element")}#${String(example.id).slice(0, 60)}.` : ""}`;
+            : `${plural(values.length, "distinct sample")} found.${exampleNote}`;
         const examples = group.related.flatMap(
           (item) =>
             item.visualEvidence?.filter(
@@ -660,9 +691,11 @@ export function buildReportPresentation(
   );
   if (resources.size) {
     const first = resourceErrors[0]!;
+    const firstLocation = conciseLocation(first.evidence.url);
+    const locationNote = firstLocation ? ` · ${firstLocation}` : "";
     sections[1]!.items.push({
       title: "Resources unavailable during this scan",
-      detail: `${resources.size} distinct resource${resources.size === 1 ? "" : "s"} returned an error. Example: HTTP ${first.evidence.status}${conciseLocation(first.evidence.url) ? ` · ${conciseLocation(first.evidence.url)}` : ""}.`,
+      detail: `${plural(resources.size, "distinct resource")} returned an error. Example: HTTP ${first.evidence.status}${locationNote}.`,
       nextStep:
         "Compare in an ordinary browser. An effect on visible features has not been confirmed.",
     });
@@ -670,10 +703,13 @@ export function buildReportPresentation(
   const scriptErrors = report.findings.filter(
     (finding) => finding.kind === "javascript-error",
   );
+  const distinctMessages = new Set(
+    scriptErrors.map((finding) => String(finding.evidence.message)),
+  );
   if (scriptErrors.length)
     sections[1]!.items.push({
       title: "Script errors observed",
-      detail: `${new Set(scriptErrors.map((finding) => String(finding.evidence.message))).size} distinct error message(s). Request restrictions may have contributed; details are below.`,
+      detail: `${distinctMessages.size} distinct error message(s). Request restrictions may have contributed; details are below.`,
       nextStep:
         "Check whether a visitor-facing feature is affected before treating these as defects.",
     });
