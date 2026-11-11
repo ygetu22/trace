@@ -99,10 +99,13 @@ export function createEvidenceRecorder() {
       if (buffer.length > 80_000)
         return { evidenceNote: "Screenshot exceeded the image size limit." };
       const id = `evidence-${screenshots.length + 1}`;
+      const markerNote = target
+        ? " Red marker 1 identifies the sampled element."
+        : " Page context only; this image does not prove the cause.";
       screenshots.push({
         id,
         dataUrl: `data:image/jpeg;base64,${buffer.toString("base64")}`,
-        caption: `${caption}${target ? " Red marker 1 identifies the sampled element." : " Page context only; this image does not prove the cause."} Form fields and embedded frames are masked.`,
+        caption: `${caption}${markerNote} Form fields and embedded frames are masked.`,
       });
       return { evidenceId: id };
     } catch {

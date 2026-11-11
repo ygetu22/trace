@@ -9,6 +9,22 @@ const limit = 3;
 interface Ledger { version: 1; clients: Record<string, number[]> }
 export interface Usage { remaining: number; retryAt: string | null; unlimited?: boolean }
 
+// Checks the outer shape of quota.json; each client entry is validated separately.
+function hasLedgerShape(
+  value: unknown,
+): value is { version: 1; clients: Record<string, unknown> } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "version" in value &&
+    value.version === 1 &&
+    "clients" in value &&
+    typeof value.clients === "object" &&
+    value.clients !== null &&
+    !Array.isArray(value.clients)
+  );
+}
+
 export class DailyQuota {
   private ledger: Ledger = { version: 1, clients: {} };
   private salt = "";
@@ -39,9 +55,14 @@ export class DailyQuota {
     if (!/^[a-f0-9]{64}$/.test(quota.salt)) throw new Error("Trace's quota salt is invalid. Restore the quota data before restarting.");
     try {
       const saved: unknown = JSON.parse(await readFile(path.join(directory, "quota.json"), "utf8"));
-      if (!saved || typeof saved !== "object" || !("version" in saved) || saved.version !== 1 || !("clients" in saved) || !saved.clients || typeof saved.clients !== "object" || Array.isArray(saved.clients)) throw new Error("Invalid quota ledger");
+      if (!hasLedgerShape(saved)) throw new Error("Invalid quota ledger");
       for (const [key, timestamps] of Object.entries(saved.clients)) {
-        if (!/^[a-f0-9]{64}$/.test(key) || !Array.isArray(timestamps) || timestamps.length > limit || timestamps.some((time) => !Number.isSafeInteger(time) || time < 0)) throw new Error("Invalid quota ledger");
+        const isValidEntry =
+          /^[a-f0-9]{64}$/.test(key) &&
+          Array.isArray(timestamps) &&
+          timestamps.length <= limit &&
+          timestamps.every((time) => Number.isSafeInteger(time) && time >= 0);
+        if (!isValidEntry) throw new Error("Invalid quota ledger");
       }
       quota.ledger = saved as Ledger;
     } catch (error) {
@@ -56,7 +77,12 @@ export class DailyQuota {
   }
 
   private usage(timestamps: number[]): Usage {
-    return { remaining: Math.max(0, limit - timestamps.length), retryAt: timestamps.length >= limit ? new Date(Math.min(...timestamps) + windowMs).toISOString() : null };
+    // The limit frees up when the oldest check in the window expires.
+    const retryAt =
+      timestamps.length >= limit
+        ? new Date(Math.min(...timestamps) + windowMs).toISOString()
+        : null;
+    return { remaining: Math.max(0, limit - timestamps.length), retryAt };
   }
 
   async peek(address: string, now = Date.now()): Promise<Usage> {
@@ -73,7 +99,12 @@ export class DailyQuota {
         if (recent.length) clients[client] = recent;
       }
       const timestamps = clients[key] ?? [];
-      if (timestamps.length >= limit) throw new TraceError("This IP has used its 3 checks in the last 24 hours. Please try again after the reset time shown below.", 429);
+      if (timestamps.length >= limit) {
+        throw new TraceError(
+          "This IP has used its 3 checks in the last 24 hours. Please try again after the reset time shown below.",
+          429,
+        );
+      }
       if (!clients[key] && Object.keys(clients).length >= 10_000) throw new TraceError("Trace's usage tracking is full. Please try later.", 503);
       clients[key] = [...timestamps, now];
       const next: Ledger = { version: 1, clients };

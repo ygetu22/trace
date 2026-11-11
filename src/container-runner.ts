@@ -24,12 +24,27 @@ export async function verifyIsolation() {
   const [proxy] = JSON.parse(await dockerCommand(["container", "inspect", "trace-egress"]));
   const image = (await dockerCommand(["image", "inspect", "trace-worker:local", "--format", "{{.Id}}"])).trim();
   const host = proxy?.HostConfig;
-  if (proxy?.Image !== image || proxy?.State?.Running !== true || proxy?.Config?.User !== "pwuser" || host?.ReadonlyRootfs !== true || host?.Privileged || !host?.CapDrop?.includes("ALL") || !host?.SecurityOpt?.includes("no-new-privileges:true") || proxy.Mounts?.length || Object.keys(host.PortBindings ?? {}).length) {
+  const proxyIsLockedDown =
+    proxy?.Image === image &&
+    proxy?.State?.Running === true &&
+    proxy?.Config?.User === "pwuser" &&
+    host?.ReadonlyRootfs === true &&
+    !host?.Privileged &&
+    host?.CapDrop?.includes("ALL") &&
+    host?.SecurityOpt?.includes("no-new-privileges:true") &&
+    !proxy.Mounts?.length &&
+    Object.keys(host.PortBindings ?? {}).length === 0;
+  if (!proxyIsLockedDown) {
     throw new Error("The egress proxy does not match the isolated configuration");
   }
 }
 
-export async function runContainer(input: unknown, signal: AbortSignal, cleanupFailed: () => void, command = ["node", "dist/src/isolated-worker.js"]): Promise<unknown> {
+export async function runContainer(
+  input: unknown,
+  signal: AbortSignal,
+  cleanupFailed: () => void,
+  command = ["node", "dist/src/isolated-worker.js"],
+): Promise<unknown> {
   if (signal.aborted) throw new TraceError("The investigation was cancelled.", 504);
   const name = `trace-job-${randomUUID()}`;
   const args = ["create", "--pull=never", "--name", name, "--init", "--interactive", "--log-driver", "none",
@@ -45,7 +60,11 @@ export async function runContainer(input: unknown, signal: AbortSignal, cleanupF
     await dockerCommand(["container", "rm", "--force", name]).catch(() => {});
     throw new TraceError("The isolated worker could not be created. Investigations have been disabled.", 503);
   }
-  const child = spawn("docker", ["--host", dockerHost, "start", "--attach", "--interactive", name], { stdio: ["pipe", "pipe", "ignore"], env: { PATH: process.env.PATH } });
+  const child = spawn(
+    "docker",
+    ["--host", dockerHost, "start", "--attach", "--interactive", name],
+    { stdio: ["pipe", "pipe", "ignore"], env: { PATH: process.env.PATH } },
+  );
   const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
   let bytes = 0;
   const chunks: Buffer[] = [];

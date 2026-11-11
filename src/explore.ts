@@ -397,9 +397,10 @@ async function runExploration(
             info.label,
           ))
       ) {
-        result.skipped.push(
-          `Skipped “${info.label}”: ${excluded ? "form, disabled, navigation, or potentially state-changing action." : "its purpose needs an owner-provided expectation."}`,
-        );
+        const reason = excluded
+          ? "form, disabled, navigation, or potentially state-changing action."
+          : "its purpose needs an owner-provided expectation.";
+        result.skipped.push(`Skipped “${info.label}”: ${reason}`);
         return false;
       }
       return true;

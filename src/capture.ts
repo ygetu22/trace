@@ -23,7 +23,16 @@ export interface CaptureReport {
   findings: Finding[];
   omittedFindings: number;
   actions: ActionRecord[];
-  coverage: { pagesVisited: number; controlsTested: number; linksTested: number; featureTests: number; accessBlocked: boolean; limited: boolean; skipped: string[]; blockedRequests: { method: string; url: string }[] };
+  coverage: {
+    pagesVisited: number;
+    controlsTested: number;
+    linksTested: number;
+    featureTests: number;
+    accessBlocked: boolean;
+    limited: boolean;
+    skipped: string[];
+    blockedRequests: { method: string; url: string }[];
+  };
   security: { https: boolean; secureContext: boolean };
   traceUrls: { desktop: string; mobile: string };
 }
@@ -54,7 +63,13 @@ export function browserEnvironment(environment: NodeJS.ProcessEnv = process.env)
   return allowed;
 }
 
-export async function capturePage(input: unknown, dataDirectory: string, signal: AbortSignal, featureCheck?: FeatureCheck, isolation?: { proxyUrl: string }): Promise<CaptureReport> {
+export async function capturePage(
+  input: unknown,
+  dataDirectory: string,
+  signal: AbortSignal,
+  featureCheck?: FeatureCheck,
+  isolation?: { proxyUrl: string },
+): Promise<CaptureReport> {
   if (signal.aborted) throw new TraceError("The capture was cancelled.", 504);
   const target = parseTarget(input);
   try {
@@ -143,7 +158,14 @@ export async function capturePage(input: unknown, dataDirectory: string, signal:
     await mobilePage.context().tracing.stop({ path: path.join(runDirectory, "mobile-trace.zip") });
     const actions = [...desktopExploration.actions, ...mobileExploration.actions];
     // Identical initial-page evidence is shared; keep distinct evidence from each viewport.
-    const allFindings = [...desktopChecks.findings, ...desktopFindings, ...desktopExploration.findings, ...mobileChecks.findings, ...mobileFindings, ...mobileExploration.findings];
+    const allFindings = [
+      ...desktopChecks.findings,
+      ...desktopFindings,
+      ...desktopExploration.findings,
+      ...mobileChecks.findings,
+      ...mobileFindings,
+      ...mobileExploration.findings,
+    ];
     const seenFindings = new Set<string>();
     const findings = allFindings.filter((item) => {
       const key = JSON.stringify([item.kind, item.summary, item.pageUrl, item.kind === "security" ? null : item.viewport, item.evidence]);
