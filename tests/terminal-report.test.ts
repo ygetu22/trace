@@ -75,3 +75,25 @@ test("terminal report has no color codes when color is off", () => {
   const text = formatTerminalReport(report(), false);
   assert.doesNotMatch(text, /\u001b\[/);
 });
+
+test("terminal report shows a button tried on several pages once, with a page count", () => {
+  const searchButton = {
+    kind: "control" as const,
+    viewport: "desktop" as const,
+    label: "Search",
+    outcome: "review" as const,
+    detail: "Page content changed; the intended result still needs confirmation.",
+    durationMs: 1,
+  };
+  const text = formatTerminalReport(
+    report({
+      actions: [
+        { ...searchButton, beforeUrl: "https://fixture.example/", afterUrl: "https://fixture.example/" },
+        { ...searchButton, beforeUrl: "https://fixture.example/docs", afterUrl: "https://fixture.example/docs" },
+      ],
+    }),
+    false,
+  );
+  assert.match(text, /What Trace tried \(1\)/);
+  assert.match(text, /\? desktop button "Search" \(on 2 pages\)/);
+});

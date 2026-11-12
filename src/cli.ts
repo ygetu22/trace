@@ -5,6 +5,7 @@ import { checkWebsite, type BasicReport } from "./basic-check.ts";
 import { compareReports } from "./compare.ts";
 import { TraceError } from "./errors.ts";
 import {
+  countDistinctItems,
   formatTerminalComparison,
   formatTerminalReport,
   painter,
@@ -35,13 +36,6 @@ Exit codes: 0 passed, 1 problems found, 2 the check could not finish`;
 const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
 const paint = painter(color);
 
-function countItems(report: BasicReport, kind: "issue" | "review"): number {
-  const sections = (report.presentation?.sections ?? []).filter(
-    (section) => section.kind === kind,
-  );
-  return sections.reduce((total, section) => total + section.items.length, 0);
-}
-
 // A check that was blocked or cut short must not count as a pass in CI.
 function finishedCompletely(report: BasicReport): boolean {
   const status = report.coverage?.status;
@@ -69,8 +63,8 @@ async function runCheck(url: string, jsonPath: string | undefined, cancel: Abort
   console.log(`\n${formatTerminalReport(report, color)}`);
   await saveJson(jsonPath, report);
 
-  const problems = countItems(report, "issue");
-  const counts = `${plural(problems, "problem")} · ${countItems(report, "review")} to review`;
+  const problems = countDistinctItems(report, "issue");
+  const counts = `${plural(problems, "problem")} · ${countDistinctItems(report, "review")} to review`;
   if (problems > 0) {
     console.log(paint(["bold", "red"], `\n✗ FAILED · ${counts}`));
     return PROBLEMS_FOUND;
