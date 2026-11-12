@@ -821,8 +821,7 @@ export async function inspectPerformance(
   return {
     kind: "performance",
     classification: "review",
-    summary:
-      "This single page load showed a possible speed or layout-stability concern",
+    summary: "Possibly slow page load or layout shift",
     pageUrl: page.url(),
     viewport,
     evidence: {
