@@ -128,8 +128,7 @@ version would need verified identity from a trusted edge and a shared quota stor
 
 ### Local unlimited mode
 
-The portfolio's dev launcher passes `TRACE_LOCAL_UNLIMITED=1` and `NODE_ENV=development` to the local server,
-which then skips the quota and returns `unlimited: true`. The UI shows a dev label instead of a count.
+Starting the local server with `TRACE_LOCAL_UNLIMITED=1` and `NODE_ENV=development` makes it skip the quota and return `unlimited: true`. The UI shows a dev label instead of a count.
 `TRACE_LOCAL_UNLIMITED=0 npm run dev` turns the normal limit back on. `TRACE_LOCAL_UNLIMITED_UNTIL` (or
 `data/usage/local-unlimited-until`) does the same until an ISO timestamp. None of this is read by the gateway.
 
