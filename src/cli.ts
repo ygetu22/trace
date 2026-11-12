@@ -19,8 +19,8 @@ const COULD_NOT_CHECK = 2;
 const CHECK_TIMEOUT_MS = 90_000;
 
 const usage = `Usage:
-  trace check <url>                 Check one site
-  trace diff <before-url> <after-url>  Compare two versions of a site
+  webtrace check <url>                    Check one site
+  webtrace diff <before-url> <after-url>  Compare two versions of a site
 
 Trace opens the site in a real browser and tries it like a visitor would.
 "diff" checks both versions and lists what stopped working.

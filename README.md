@@ -1,10 +1,64 @@
 # Trace
 
-You paste in a URL and Trace opens the site in a real browser, clicks around a bit like a visitor would, and gives you back a short report on what worked and what didn't.
+Trace opens a website in a real browser, clicks around like a visitor would, and tells you what worked and what didn't. You run it from the terminal as `webtrace`.
 
-I built it because most site checkers only load the homepage and score it. I wanted something that actually tries the menu, follows a couple of links, types into a form, and shows a screenshot when something doesn't behave.
+I built it because most site checkers only load the homepage and score it. I wanted something that actually tries the menu, follows a few links, types into a form, and tells me when something stops working after I change my site.
 
-![Trace report for playwright.dev](docs/images/report.png)
+```
+$ webtrace diff https://playwright.dev https://playwright.dev/python
+
+Comparing
+  before  https://playwright.dev/
+  after   https://playwright.dev/python/
+
+Changed (3)
+  ? desktop link "Testing documentation"
+      before: opened /docs/intro
+      after:  opened /python/docs/intro
+  ...
+
+Same on both: 3 · Tried on only one version: 2
+
+✓ PASSED · nothing stopped working
+```
+
+## Setup
+
+You need Node 22 or newer and Google Chrome.
+
+```sh
+git clone https://github.com/ygetu22/trace.git
+cd trace
+npm install
+npm run build
+npm install -g .
+```
+
+That last line adds the `webtrace` command to your terminal. Then:
+
+```sh
+export TRACE_BROWSER_CHANNEL=chrome   # use your installed Chrome
+webtrace check https://your-site.com
+```
+
+No Chrome? Run `npx playwright install chromium` and skip the `export` line.
+
+## Commands
+
+**`webtrace check <url>`** checks one site and prints what Trace tried, any problems, and things worth a look.
+
+**`webtrace diff <before-url> <after-url>`** checks two versions of a site, like your live site and a preview of your next change, and lists:
+
+- **Stopped working:** something that worked before and fails now. This fails the run.
+- **New problems:** a confirmed problem that wasn't there before. This also fails the run.
+- **Changed:** a link that goes somewhere else now, or a result that needs a look. Doesn't fail.
+- **Fixed:** something that was broken before and works now.
+
+Trace picks what to click by itself, so the two runs can try slightly different things. Anything tried on only one version is counted but never treated as broken. Speed numbers change from visit to visit, so they never fail a diff either.
+
+Add `--json trace-results.json` to either command to save the full results.
+
+The command exits with `0` when it passes, `1` when it finds problems, and `2` when it couldn't finish (blocked, timed out, bad URL). That makes it easy to use in a CI step or a script.
 
 ## What it checks
 
@@ -12,11 +66,9 @@ I built it because most site checkers only load the homepage and score it. I wan
 - **Accessibility:** missing labels and alt text, unnamed buttons, tab order, and a sample of text contrast.
 - **Search preview:** title, description, H1, and noindex.
 - **Performance:** LCP, layout shift, and long tasks from one visit. This isn't real-user data.
-- **Visitor path:** it guesses what a visitor would want on the site and tries that. On a gym site that's locations, on a shop it's products. On each page it presses up to four buttons, edits up to two forms, and follows up to three links. Anything that fails or can't be confirmed gets a screenshot with the element marked in red.
+- **Visitor path:** it guesses what a visitor would want on the site and tries that. On a gym site that's locations, on a shop it's products. On each page it presses up to four buttons, edits up to two forms, and follows up to three links.
 
-You can also give it one thing to check yourself, like "click *Show hours* and expect to see *Open until 5 PM*".
-
-The report splits findings into real problems, things to review, and recommendations. It won't call something broken unless it actually saw it break.
+It splits findings into real problems, things to review, and recommendations, and it won't call something broken unless it actually saw it break.
 
 ## Staying safe on other people's sites
 
@@ -26,24 +78,23 @@ Trace visits sites it doesn't control, so I locked down what it's allowed to do:
 - **Searches are limited.** A search box can only send the word `trace`, and only to its own site.
 - **Only reads go out.** POST/PUT requests, WebSockets, downloads, and popups are blocked.
 - **No private addresses.** Every request goes through a small proxy (`src/outbound-proxy.ts`) that rejects private, loopback, and cloud metadata addresses. It also pins the IP it checked, so DNS rebinding can't sneak past.
-- **Each check is short-lived.** It gets a fresh browser and a 90 second deadline, and only one runs at a time.
-- **Usage is capped.** Each IP gets 3 checks a day. IPs are stored as salted hashes, never raw.
+- **Each check is short-lived.** It gets a fresh browser and a 90 second deadline.
 
 Still, only run it on sites you're allowed to test.
 
-## Running it
+## Web version
 
-You need Node 22+.
+There's also a small local web page with a fuller report and marked-up screenshots:
 
 ```sh
-npm install
-npx playwright install chromium
-npm run dev
+TRACE_BROWSER_CHANNEL=chrome npm run dev
 ```
 
-Then open http://127.0.0.1:3120. If you'd rather use your installed Chrome, run `TRACE_BROWSER_CHANNEL=chrome npm run dev`.
+Then open http://127.0.0.1:3120. It only listens on localhost and allows 3 checks per visitor per day (IPs are stored as salted hashes).
 
-The server only listens on localhost.
+![Trace web report for playwright.dev](docs/images/report.png)
+
+## Development
 
 ```sh
 npm run check   # type check
@@ -53,18 +104,20 @@ TRACE_BROWSER_CHANNEL=chrome TRACE_LIVE_TESTS=1 npm test   # also hits example.c
 
 ## Code layout
 
+- `src/cli.ts` is the `webtrace` command, and `src/terminal-report.ts` prints its output.
+- `src/compare.ts` compares two runs for `webtrace diff`.
 - `src/basic-check.ts` runs a check from start to finish.
 - `src/explore.ts` and `src/journey.ts` pick the visitor path and try the buttons and links.
 - `src/form-interactions.ts` and `src/search-interactions.ts` handle the form and search tests.
 - `src/checks.ts` holds the page health, accessibility, metadata, and performance checks.
-- `src/report.ts` turns the results into the report.
+- `src/report.ts` turns the results into the web report.
 - `src/screenshot-evidence.ts` takes the marked-up screenshots.
 - `src/network-policy.ts` and `src/outbound-proxy.ts` decide what the browser is allowed to reach.
-- `src/daily-quota.ts` is the 3-per-day limit.
+- `src/daily-quota.ts` is the web version's 3-per-day limit.
 - `web/` is the plain HTML/JS frontend, and `tests/` has the tests.
 
 There's more detail in [docs/how-it-works.md](docs/how-it-works.md).
 
-## Not live yet
+## Hosting
 
-Right now it only runs locally. My portfolio's Trace page talks to it on localhost too, so it won't run checks on the live site until this is hosted. To host it for real, I'll run each check in its own locked-down container on a separate server. That plan is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), along with the `deployment/` and `src/gateway*` files. None of it is running yet.
+The terminal command runs on your own machine, so there's nothing to host. A public web version would need each check in its own locked-down container on a separate server. That plan is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), along with the `deployment/` and `src/gateway*` files. None of it is running.
