@@ -6,7 +6,6 @@ import type { Journey } from "./journey.ts";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { chromium, type Browser } from "playwright";
-import { browserEnvironment } from "./capture.ts";
 import {
   checkMobileOverflow,
   inspectPage,
@@ -196,6 +195,18 @@ async function createCheckPage(
   });
   page.setDefaultTimeout(5000);
   return page;
+}
+
+// The browser visits untrusted sites, so it only gets the few environment variables it
+// needs to start. API keys and cloud credentials in the user's shell never reach it.
+export function browserEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const allowed: Record<string, string> = {};
+  for (const name of ["PATH", "HOME", "TMPDIR", "LANG", "DISPLAY", "XDG_RUNTIME_DIR"]) {
+    if (environment[name]) allowed[name] = environment[name]!;
+  }
+  return allowed;
 }
 
 export async function checkWebsite(

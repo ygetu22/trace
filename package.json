@@ -6,12 +6,8 @@
   "engines": { "node": ">=22" },
   "bin": { "webtrace": "dist/src/cli.js" },
   "scripts": {
-    "dev": "node --experimental-strip-types --watch src/server.ts",
     "check": "tsc --noEmit",
     "build": "tsc",
-    "start": "node dist/src/server.js",
-    "gateway": "node dist/src/gateway.js",
-    "check:isolation": "node dist/src/isolation-check.js",
     "test": "npm run build && node --test dist/tests/*.test.js"
   },
   "dependencies": {

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   basicChecks,
   basicFindings,
+  browserEnvironment,
   checkWebsite,
   formatBasicReport,
   formatReportDownload,
@@ -315,3 +316,17 @@ for (const url of ["https://example.com", "https://playwright.dev"]) {
     },
   );
 }
+
+test("browser environment excludes service keys and cloud credentials", () => {
+  assert.deepEqual(
+    browserEnvironment({
+      PATH: "/bin",
+      HOME: "/tmp",
+      TRACE_SERVICE_KEY: "secret",
+      AWS_SECRET_ACCESS_KEY: "secret",
+      OPENAI_API_KEY: "secret",
+      NODE_OPTIONS: "--require=evil",
+    }),
+    { PATH: "/bin", HOME: "/tmp" },
+  );
+});
