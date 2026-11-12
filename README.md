@@ -82,18 +82,6 @@ Trace visits sites it doesn't control, so I locked down what it's allowed to do:
 
 Still, only run it on sites you're allowed to test.
 
-## Web version
-
-There's also a small local web page with a fuller report and marked-up screenshots:
-
-```sh
-TRACE_BROWSER_CHANNEL=chrome npm run dev
-```
-
-Then open http://127.0.0.1:3120. It only listens on localhost and allows 3 checks per visitor per day (IPs are stored as salted hashes).
-
-![Trace web report for playwright.dev](docs/images/report.png)
-
 ## Development
 
 ```sh
@@ -110,14 +98,9 @@ TRACE_BROWSER_CHANNEL=chrome TRACE_LIVE_TESTS=1 npm test   # also hits example.c
 - `src/explore.ts` and `src/journey.ts` pick the visitor path and try the buttons and links.
 - `src/form-interactions.ts` and `src/search-interactions.ts` handle the form and search tests.
 - `src/checks.ts` holds the page health, accessibility, metadata, and performance checks.
-- `src/report.ts` turns the results into the web report.
+- `src/report.ts` groups the findings into problems, things to review, and optional improvements.
 - `src/screenshot-evidence.ts` takes the marked-up screenshots.
 - `src/network-policy.ts` and `src/outbound-proxy.ts` decide what the browser is allowed to reach.
-- `src/daily-quota.ts` is the web version's 3-per-day limit.
-- `web/` is the plain HTML/JS frontend, and `tests/` has the tests.
+- `tests/` has the unit and browser tests.
 
 There's more detail in [docs/how-it-works.md](docs/how-it-works.md).
-
-## Hosting
-
-The terminal command runs on your own machine, so there's nothing to host. A public web version would need each check in its own locked-down container on a separate server. That plan is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), along with the `deployment/` and `src/gateway*` files. None of it is running.
