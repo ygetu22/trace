@@ -4,3 +4,6 @@ data/
 .env*
 !.env.example
 .DS_Store
+
+# Results saved with --json
+trace-results*.json

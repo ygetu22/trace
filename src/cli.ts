@@ -1,9 +1,14 @@
 #!/usr/bin/env node
 import { writeFile } from "node:fs/promises";
-import { parseArgs, styleText } from "node:util";
+import { parseArgs } from "node:util";
 import { checkWebsite, type BasicReport } from "./basic-check.ts";
+import { compareReports } from "./compare.ts";
 import { TraceError } from "./errors.ts";
-import { formatTerminalReport } from "./terminal-report.ts";
+import {
+  formatTerminalComparison,
+  formatTerminalReport,
+  painter,
+} from "./terminal-report.ts";
 
 // Exit codes are how CI tools decide pass or fail.
 const PASSED = 0;
@@ -13,16 +18,22 @@ const COULD_NOT_CHECK = 2;
 // Same deadline the local web server gives each check.
 const CHECK_TIMEOUT_MS = 90_000;
 
-const usage = `Usage: trace check <url> [--json <file>]
+const usage = `Usage:
+  trace check <url>                 Check one site
+  trace diff <before-url> <after-url>  Compare two versions of a site
 
-Opens the site in a real browser, tries it like a visitor would,
-and prints a report.
+Trace opens the site in a real browser and tries it like a visitor would.
+"diff" checks both versions and lists what stopped working.
 
 Options:
   --json <file>  Also save the full results as JSON
   -h, --help     Show this message
 
 Exit codes: 0 passed, 1 problems found, 2 the check could not finish`;
+
+// Colors only for a person at a terminal, not for log files or CI.
+const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+const paint = painter(color);
 
 function countItems(report: BasicReport, kind: "issue" | "review"): number {
   const sections = (report.presentation?.sections ?? []).filter(
@@ -37,53 +48,67 @@ function finishedCompletely(report: BasicReport): boolean {
   return status !== "blocked" && status !== "interrupted";
 }
 
-async function runCheck(url: string, jsonPath: string | undefined): Promise<number> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
-  const cancel = () => controller.abort();
-  process.once("SIGINT", cancel);
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
 
-  // Colors only for a person at a terminal, not for log files or CI.
-  const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
-  const paint = (style: Parameters<typeof styleText>[0], text: string) =>
-    color ? styleText(style, text, { validateStream: false }) : text;
+async function checkWithDeadline(url: string, cancel: AbortSignal): Promise<BasicReport> {
+  console.log(paint("dim", `Checking ${url} …`));
+  const signal = AbortSignal.any([cancel, AbortSignal.timeout(CHECK_TIMEOUT_MS)]);
+  return checkWebsite(url, signal);
+}
 
-  try {
-    console.log(paint("dim", `Checking ${url} …\n`));
-    const report = await checkWebsite(url, controller.signal);
-    console.log(formatTerminalReport(report, color));
+async function saveJson(path: string | undefined, data: unknown): Promise<void> {
+  if (!path) return;
+  await writeFile(path, JSON.stringify(data, null, 2));
+  console.log(paint("dim", `Saved full results to ${path}`));
+}
 
-    if (jsonPath) {
-      await writeFile(jsonPath, JSON.stringify(report, null, 2));
-      console.log(paint("dim", `Saved full results to ${jsonPath}`));
-    }
+async function runCheck(url: string, jsonPath: string | undefined, cancel: AbortSignal) {
+  const report = await checkWithDeadline(url, cancel);
+  console.log(`\n${formatTerminalReport(report, color)}`);
+  await saveJson(jsonPath, report);
 
-    const problems = countItems(report, "issue");
-    const reviews = countItems(report, "review");
-    const counts = `${problems} problem${problems === 1 ? "" : "s"} · ${reviews} to review`;
-    if (problems > 0) {
-      console.log(paint(["bold", "red"], `\n✗ FAILED · ${counts}`));
-      return PROBLEMS_FOUND;
-    }
-    if (!finishedCompletely(report)) {
-      console.log(paint(["bold", "yellow"], `\n! INCOMPLETE · ${counts}`));
-      return COULD_NOT_CHECK;
-    }
-    console.log(paint(["bold", "green"], `\n✓ PASSED · ${counts}`));
-    return PASSED;
-  } catch (error) {
-    if (controller.signal.aborted) {
-      console.error("The check was stopped before it finished.");
-    } else if (error instanceof TraceError) {
-      console.error(error.message);
-    } else {
-      console.error("The check failed unexpectedly:", error);
-    }
-    return COULD_NOT_CHECK;
-  } finally {
-    clearTimeout(timeout);
-    process.removeListener("SIGINT", cancel);
+  const problems = countItems(report, "issue");
+  const counts = `${plural(problems, "problem")} · ${countItems(report, "review")} to review`;
+  if (problems > 0) {
+    console.log(paint(["bold", "red"], `\n✗ FAILED · ${counts}`));
+    return PROBLEMS_FOUND;
   }
+  if (!finishedCompletely(report)) {
+    console.log(paint(["bold", "yellow"], `\n! INCOMPLETE · ${counts}`));
+    return COULD_NOT_CHECK;
+  }
+  console.log(paint(["bold", "green"], `\n✓ PASSED · ${counts}`));
+  return PASSED;
+}
+
+async function runDiff(
+  beforeUrl: string,
+  afterUrl: string,
+  jsonPath: string | undefined,
+  cancel: AbortSignal,
+) {
+  // One at a time, so both versions get the same machine resources and timing.
+  const before = await checkWithDeadline(beforeUrl, cancel);
+  const after = await checkWithDeadline(afterUrl, cancel);
+  const comparison = compareReports(before, after);
+  console.log(`\n${formatTerminalComparison(before, after, comparison, color)}`);
+  await saveJson(jsonPath, { before, after, comparison });
+
+  const broke = comparison.broke.length;
+  const newProblems = comparison.newProblems.length;
+  const counts = `${broke} stopped working · ${plural(newProblems, "new problem")}`;
+  if (broke + newProblems > 0) {
+    console.log(paint(["bold", "red"], `\n✗ FAILED · ${counts}`));
+    return PROBLEMS_FOUND;
+  }
+  if (!finishedCompletely(before) || !finishedCompletely(after)) {
+    console.log(paint(["bold", "yellow"], "\n! INCOMPLETE · one of the checks could not finish"));
+    return COULD_NOT_CHECK;
+  }
+  console.log(paint(["bold", "green"], `\n✓ PASSED · nothing stopped working`));
+  return PASSED;
 }
 
 async function main(): Promise<number> {
@@ -100,17 +125,39 @@ async function main(): Promise<number> {
     console.error(`${(error as Error).message}\n\n${usage}`);
     return COULD_NOT_CHECK;
   }
-
-  const [command, url, ...extra] = parsed.positionals;
   if (parsed.values.help) {
     console.log(usage);
     return PASSED;
   }
-  if (command !== "check" || !url || extra.length) {
+
+  const [command, ...urls] = parsed.positionals;
+  const validCheck = command === "check" && urls.length === 1;
+  const validDiff = command === "diff" && urls.length === 2;
+  if (!validCheck && !validDiff) {
     console.error(usage);
     return COULD_NOT_CHECK;
   }
-  return runCheck(url, parsed.values.json);
+
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  process.once("SIGINT", cancel);
+  try {
+    if (validCheck) return await runCheck(urls[0]!, parsed.values.json, controller.signal);
+    return await runDiff(urls[0]!, urls[1]!, parsed.values.json, controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      console.error("The check was stopped before it finished.");
+    } else if (error instanceof Error && error.name === "TimeoutError") {
+      console.error(`The check took longer than ${CHECK_TIMEOUT_MS / 1000} seconds and was stopped.`);
+    } else if (error instanceof TraceError) {
+      console.error(error.message);
+    } else {
+      console.error("The check failed unexpectedly:", error);
+    }
+    return COULD_NOT_CHECK;
+  } finally {
+    process.removeListener("SIGINT", cancel);
+  }
 }
 
 process.exitCode = await main();
