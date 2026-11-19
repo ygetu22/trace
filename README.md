@@ -104,3 +104,7 @@ TRACE_BROWSER_CHANNEL=chrome TRACE_LIVE_TESTS=1 npm test   # also hits example.c
 - `tests/` has the unit and browser tests.
 
 There's more detail in [docs/how-it-works.md](docs/how-it-works.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
